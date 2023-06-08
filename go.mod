@@ -1,4 +1,4 @@
-module github.com/lightninglabs/lightning-terminal
+module github.com/viktortigerstrom/lightning-terminal
 
 require (
 	github.com/btcsuite/btcd v0.23.5-0.20230228185050-38331963bddd
