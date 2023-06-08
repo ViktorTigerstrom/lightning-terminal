@@ -7,6 +7,7 @@ import (
 	"github.com/lightninglabs/lightning-terminal/litrpc"
 	"github.com/lightninglabs/loop/looprpc"
 	"github.com/lightninglabs/pool/poolrpc"
+	"github.com/lightninglabs/taproot-assets/taprpc"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lnrpc/autopilotrpc"
 	"github.com/lightningnetwork/lnd/lnrpc/chainrpc"
@@ -46,4 +47,5 @@ var Registrations = []StubPackageRegistration{
 	litrpc.RegisterAccountsJSONCallbacks,
 	litrpc.RegisterAutopilotJSONCallbacks,
 	litrpc.RegisterFirewallJSONCallbacks,
+	taprpc.RegisterTaprootAssetsJSONCallbacks,
 }
