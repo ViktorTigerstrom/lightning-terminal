@@ -14,12 +14,12 @@ require (
 	github.com/lightninglabs/faraday v0.2.11-alpha.0.20231003174141-945b7188032f
 	github.com/lightninglabs/lightning-node-connect v0.2.7-alpha
 	github.com/lightninglabs/lightning-terminal/autopilotserverrpc v0.0.1
-	github.com/lightninglabs/lndclient v0.17.0-4
+	github.com/lightninglabs/lndclient v0.17.0-3
 	github.com/lightninglabs/loop v0.26.6-beta
 	github.com/lightninglabs/loop/swapserverrpc v1.0.5
 	github.com/lightninglabs/pool v0.6.4-beta.0.20231003174306-80d8854a0c4b
 	github.com/lightninglabs/pool/auctioneerrpc v1.1.1
-	github.com/lightninglabs/taproot-assets v0.3.2
+	github.com/lightninglabs/taproot-assets v0.3.1
 	github.com/lightningnetwork/lnd v0.17.3-beta
 	github.com/lightningnetwork/lnd/cert v1.2.2
 	github.com/lightningnetwork/lnd/kvdb v1.4.4
@@ -30,7 +30,7 @@ require (
 	github.com/stretchr/testify v1.8.4
 	github.com/urfave/cli v1.22.9
 	go.etcd.io/bbolt v1.3.7
-	golang.org/x/crypto v0.14.0
+	golang.org/x/crypto v0.17.0
 	golang.org/x/net v0.17.0
 	golang.org/x/sync v0.3.0
 	google.golang.org/grpc v1.59.0
@@ -200,9 +200,9 @@ require (
 	go.uber.org/zap v1.23.0 // indirect
 	golang.org/x/exp v0.0.0-20230315142452-642cacee5cc0 // indirect
 	golang.org/x/mod v0.10.0 // indirect
-	golang.org/x/sys v0.13.0 // indirect
-	golang.org/x/term v0.13.0 // indirect
-	golang.org/x/text v0.13.0 // indirect
+	golang.org/x/sys v0.15.0 // indirect
+	golang.org/x/term v0.15.0 // indirect
+	golang.org/x/text v0.14.0 // indirect
 	golang.org/x/time v0.3.0 // indirect
 	golang.org/x/tools v0.9.1 // indirect
 	google.golang.org/genproto v0.0.0-20230822172742-b8732ec3820d // indirect
@@ -232,5 +232,7 @@ replace github.com/lightninglabs/lightning-terminal/autopilotserverrpc => ./auto
 // allows us to specify that as an option. This is required for the
 // taproot-assets dependency to function properly.
 replace google.golang.org/protobuf => github.com/lightninglabs/protobuf-go-hex-display v1.30.0-hex-display
+
+replace github.com/lightninglabs/lndclient v0.17.0-3 => github.com/ViktorTigerstrom/lndclient v1.0.1-0.20240105011956-584177ac5c46
 
 go 1.21

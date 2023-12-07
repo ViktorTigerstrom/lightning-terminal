@@ -748,6 +748,7 @@ func (g *LightningTerminal) setUpLNDClients(lndQuit chan struct{}) error {
 	// if lnd is also ready to be used in the next step.
 	log.Infof("Connecting basic lnd client")
 
+	i1 := 1
 	for {
 		// Create an lnd client now that we have the full configuration.
 		// We'll need a basic client and a full client because not all
@@ -756,6 +757,10 @@ func (g *LightningTerminal) setUpLNDClients(lndQuit chan struct{}) error {
 			host, tlsPath, filepath.Dir(macPath),
 			string(network), clientOptions...,
 		)
+		if i1 <= 3 {
+			err = errors.New("Mock Failure")
+		}
+
 		if err == nil {
 			log.Infof("Basic lnd client connected")
 
@@ -773,6 +778,8 @@ func (g *LightningTerminal) setUpLNDClients(lndQuit chan struct{}) error {
 		}
 
 		log.Infof("Retrying to connect basic lnd client")
+
+		i1++
 	}
 
 	// Now we know that the connection itself is ready. But we also need to
@@ -799,8 +806,21 @@ func (g *LightningTerminal) setUpLNDClients(lndQuit chan struct{}) error {
 		}
 	}()
 
+	i := 1
 	log.Infof("Connecting full lnd client")
 	for {
+
+		var mockContext context.Context
+		if i <= 3 {
+			mockContext = context.WithValue(
+				ctxc, "SimulateFail", true,
+			)
+		} else {
+			mockContext = context.WithValue(
+				ctxc, "SimulateFail", false,
+			)
+		}
+
 		g.lndClient, err = lndclient.NewLndServices(
 			&lndclient.LndServicesConfig{
 				LndAddress:            host,
@@ -811,10 +831,11 @@ func (g *LightningTerminal) setUpLNDClients(lndQuit chan struct{}) error {
 				CustomMacaroonHex:     hex.EncodeToString(macData),
 				BlockUntilChainSynced: true,
 				BlockUntilUnlocked:    true,
-				CallerCtx:             ctxc,
+				CallerCtx:             mockContext,
 				CheckVersion:          minimalCompatibleVersion,
 			},
 		)
+
 		if err == nil {
 			log.Infof("Full lnd client connected")
 
@@ -823,9 +844,10 @@ func (g *LightningTerminal) setUpLNDClients(lndQuit chan struct{}) error {
 
 		g.statusMgr.SetErrored(
 			subservers.LIT,
-			"Error when creating LND Services client: %v",
-			err,
+			"Error %d when creating LND Services client: %v",
+			i, err,
 		)
+		i++
 
 		err = checkRunning()
 		if err != nil {
