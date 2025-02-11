@@ -24,6 +24,14 @@
   specified amount.
 
 ### Technical and Architectural Updates
+
+## RPC Updates
+
+* The [`accounts update` `--new_balance` flag has been
+  deprecated](https://github.com/lightninglabs/lightning-terminal/pull/974).
+  Use the `accounts credit` and `accounts debit` commands instead, to update
+  an account's balance. The flag will no longer be supported in Lightning
+  Terminal `v0.15.0-alpha`.
  
 ## Integrated Binary Updates
 
