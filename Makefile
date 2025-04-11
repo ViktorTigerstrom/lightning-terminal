@@ -14,7 +14,7 @@ GO_BIN := ${GOPATH}/bin
 GOACC_BIN := $(GO_BIN)/go-acc
 GOIMPORTS_BIN := $(GO_BIN)/gosimports
 
-COMMIT := $(shell git describe --abbrev=40 --dirty --tags)
+COMMIT := $(shell git describe --abbrev=40 --dirty | sed -E 's/.*-g([0-9a-f]{40})(-dirty)?/\1\2/')
 COMMIT_HASH := $(shell git rev-parse HEAD)
 PUBLIC_URL := 
 
