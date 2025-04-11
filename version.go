@@ -33,6 +33,24 @@ const (
 // Version returns the application version as a properly formed string per the
 // semantic versioning 2.0.0 spec (http://semver.org/).
 func Version() string {
+	return semanticVersion()
+}
+
+// RichVersion returns the application version as a properly formed string
+// per the semantic versioning 2.0.0 spec (http://semver.org/) and the commit
+// it was built on.
+func RichVersion() string {
+	// Append commit hash of current build to version.
+	return fmt.Sprintf("%s commit=%s", semanticVersion(), Commit)
+}
+
+// CommitHash returns the commit hash of the current build.
+func CommitHash() string {
+	return Commit
+}
+
+// semanticVersion returns the SemVer part of the version.
+func semanticVersion() string {
 	// Start with the major, minor, and patch versions.
 	version := fmt.Sprintf("%d.%d.%d", appMajor, appMinor, appPatch)
 
@@ -44,9 +62,6 @@ func Version() string {
 	if preRelease != "" {
 		version = fmt.Sprintf("%s-%s", version, preRelease)
 	}
-
-	// Append commit hash of current build to version.
-	version = fmt.Sprintf("%s commit=%s", version, Commit)
 
 	return version
 }

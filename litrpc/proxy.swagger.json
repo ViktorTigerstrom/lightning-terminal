@@ -136,6 +136,10 @@
         "version": {
           "type": "string",
           "description": "The version of the LiTd software that the node is running."
+        },
+        "commit_hash": {
+          "type": "string",
+          "description": "The git commit hash of the litd binary."
         }
       }
     },

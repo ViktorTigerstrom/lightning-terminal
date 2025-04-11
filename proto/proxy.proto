@@ -54,4 +54,7 @@ message GetInfoRequest {
 message GetInfoResponse {
     // The version of the LiTd software that the node is running.
     string version = 1;
+
+    // The git commit hash of the litd binary.
+    string commit_hash = 2;
 }
