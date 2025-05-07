@@ -3,6 +3,7 @@
 package terminal
 
 import (
+	"context"
 	"fmt"
 	"github.com/lightninglabs/lightning-terminal/db/sqlc"
 	"path/filepath"
@@ -56,6 +57,8 @@ type DevConfig struct {
 
 	// Postgres holds the configuration options for a Postgres database
 	Postgres *db.PostgresConfig `group:"postgres" namespace:"postgres"`
+
+	MigrateToSql bool `long:"migrate-to-sql" description:"Migrate the bbolt database to SQL."`
 }
 
 // Validate checks that all the values set in our DevConfig are valid and uses
@@ -66,6 +69,11 @@ func (c *DevConfig) Validate(dbDir, network string) error {
 		c.Sqlite.DatabaseFileName = filepath.Join(
 			dbDir, network, defaultSqliteDatabaseFileName,
 		)
+	}
+
+	if c.MigrateToSql && c.DatabaseBackend == DatabaseBackendBbolt {
+		return fmt.Errorf("migrate-to-sql can only be used with an " +
+			"sql backend")
 	}
 
 	return nil
@@ -82,11 +90,14 @@ func defaultDevConfig() *DevConfig {
 			Port:               5432,
 			MaxOpenConnections: 10,
 		},
+		MigrateToSql: false,
 	}
 }
 
 // NewStores creates a new stores instance based on the chosen database backend.
-func NewStores(cfg *Config, clock clock.Clock) (*stores, error) {
+func NewStores(ctx context.Context, cfg *Config,
+	clock clock.Clock) (*stores, error) {
+
 	var (
 		networkDir = filepath.Join(cfg.LitDir, cfg.Network)
 		stores     = &stores{
@@ -139,6 +150,13 @@ func NewStores(cfg *Config, clock clock.Clock) (*stores, error) {
 		stores.firewall = firewalldb.NewDB(firewallStore)
 		stores.closeFns["sqlite"] = sqlStore.BaseDB.Close
 
+		err = migrateStores(
+			ctx, cfg, sqlStore.BaseDB, acctStore, sessStore, clock,
+		)
+		if err != nil {
+			return stores, err
+		}
+
 	case DatabaseBackendPostgres:
 		sqlStore, err := sqldb.NewPostgresStore(&sqldb.PostgresConfig{
 			Dsn:                cfg.Postgres.DSN(false),
@@ -181,6 +199,13 @@ func NewStores(cfg *Config, clock clock.Clock) (*stores, error) {
 		stores.firewall = firewalldb.NewDB(firewallStore)
 		stores.closeFns["postgres"] = sqlStore.BaseDB.Close
 
+		err = migrateStores(
+			ctx, cfg, sqlStore.BaseDB, acctStore, sessStore, clock,
+		)
+		if err != nil {
+			return stores, err
+		}
+
 	default:
 		accountStore, err := accounts.NewBoltStore(
 			filepath.Dir(cfg.MacaroonPath), accounts.DBFilename,
@@ -217,4 +242,76 @@ func NewStores(cfg *Config, clock clock.Clock) (*stores, error) {
 	}
 
 	return stores, nil
+}
+
+func migrateStores(ctx context.Context, cfg *Config, sqlDB *db.BaseDB,
+	acctStore *accounts.SQLStore, sessStore *session.SQLStore,
+	clock clock.Clock) error {
+
+	if !cfg.MigrateToSql {
+		log.Tracef("Skipping migrations of kvdb database to SQLite, " +
+			"as the migrate-to-sql flag is not set")
+
+		return nil
+	}
+
+	var (
+		writeTxOpts db.QueriesTxOptions
+	)
+
+	tx, err := sqlDB.BeginTx(ctx, &writeTxOpts)
+	if err != nil {
+		return fmt.Errorf("error starting migration tx: %w", err)
+	}
+
+	// Ensure we roll back the migration on any error path
+	defer func() {
+		if err != nil {
+			rollBackErr := tx.Rollback()
+			if rollBackErr != nil {
+				log.Errorf("error rolling back migration tx: "+
+					"%v", err)
+			}
+		}
+	}()
+
+	accountStore, err := accounts.NewBoltStore(
+		filepath.Dir(cfg.MacaroonPath), accounts.DBFilename,
+		clock,
+	)
+	if err != nil {
+		return err
+	}
+
+	err = accounts.MigrateAccountStoreToSQL(
+		ctx, accountStore.DB, acctStore.WithTx(tx),
+	)
+	if err != nil {
+		return fmt.Errorf("error migrating account store to SQL: %v",
+			err)
+	}
+
+	sessionStore, err := session.NewDB(
+		filepath.Dir(cfg.MacaroonPath), session.DBFilename, clock,
+		acctStore,
+	)
+	if err != nil {
+		return err
+	}
+
+	err = session.MigrateSessionStoreToSQL(
+		ctx, sessionStore.DB, sessStore.WithTx(tx),
+	)
+	if err != nil {
+		return fmt.Errorf("error migrating session store to SQL: %v",
+			err)
+	}
+
+	// The migrations succeeded! We're therefore good to commit the tx.
+	err = tx.Commit()
+	if err != nil {
+		return fmt.Errorf("committing migration tx: %w", err)
+	}
+
+	return err
 }
