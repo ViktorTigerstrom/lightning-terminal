@@ -60,7 +60,7 @@ require (
 )
 
 require (
-	dario.cat/mergo v1.0.1 // indirect
+	dario.cat/mergo v1.0.2 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20230124172434-306776ec8161 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/NebulousLabs/fastrand v0.0.0-20181203155948-6fb6489aac4e // indirect
@@ -148,6 +148,7 @@ require (
 	github.com/lightningnetwork/lightning-onion v1.2.1-0.20240712235311-98bd56499dfb // indirect
 	github.com/lightningnetwork/lnd/healthcheck v1.2.6 // indirect
 	github.com/lightningnetwork/lnd/queue v1.1.1 // indirect
+	github.com/lightningnetwork/lnd/sqldb/v2 v2.0.0-00010101000000-000000000000 // indirect
 	github.com/lightningnetwork/lnd/ticker v1.1.1 // indirect
 	github.com/ltcsuite/ltcd v0.0.0-20190101042124-f37f8bf35796 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
@@ -245,6 +246,8 @@ replace google.golang.org/protobuf => github.com/lightninglabs/protobuf-go-hex-d
 // automatically, so we need to add it manually.
 replace github.com/golang-migrate/migrate/v4 => github.com/lightninglabs/migrate/v4 v4.18.2-9023d66a-fork-pr-2
 
-replace github.com/lightningnetwork/lnd => github.com/lightningnetwork/lnd v0.19.0-beta
+replace github.com/lightningnetwork/lnd => /Users/viktortigerstrom/Desktop/Jobb/Lightning_Labs/lnd_forked/lnd
+
+replace github.com/lightningnetwork/lnd/sqldb/v2 => /Users/viktortigerstrom/Desktop/Jobb/Lightning_Labs/lnd_forked/lnd/sqldb
 
 go 1.23.9
