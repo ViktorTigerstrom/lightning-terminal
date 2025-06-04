@@ -151,6 +151,7 @@ require (
 	github.com/lightningnetwork/lightning-onion v1.2.1-0.20240712235311-98bd56499dfb // indirect
 	github.com/lightningnetwork/lnd/healthcheck v1.2.6 // indirect
 	github.com/lightningnetwork/lnd/queue v1.1.1 // indirect
+	github.com/lightningnetwork/lnd/sqldb/v2 v2.0.0-00010101000000-000000000000 // indirect
 	github.com/lightningnetwork/lnd/ticker v1.1.1 // indirect
 	github.com/ltcsuite/ltcd v0.0.0-20190101042124-f37f8bf35796 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
@@ -247,3 +248,8 @@ replace google.golang.org/protobuf => github.com/lightninglabs/protobuf-go-hex-d
 // it is a replace in the tapd repository, it doesn't get propagated here
 // automatically, so we need to add it manually.
 replace github.com/golang-migrate/migrate/v4 => github.com/lightninglabs/migrate/v4 v4.18.2-9023d66a-fork-pr-2
+
+replace github.com/lightningnetwork/lnd => github.com/ViktorTigerstrom/lnd v0.0.0-20250707144606-394a7dfc454a
+
+// TODO: replace this with your own local fork
+replace github.com/lightningnetwork/lnd/sqldb/v2 => ../../lnd_forked/lnd/sqldb
