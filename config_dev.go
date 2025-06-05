@@ -111,6 +111,15 @@ func NewStores(cfg *Config, clock clock.Clock) (*stores, error) {
 			return stores, err
 		}
 
+		if !cfg.Sqlite.SkipMigrations {
+			err = sqldb.ApplyAllMigrations(
+				sqlStore, db.LitdMigrationStreams,
+			)
+			if err != nil {
+				return stores, err
+			}
+		}
+
 		queries := sqlc.NewForType(sqlStore, sqlStore.BackendType)
 
 		acctStore := accounts.NewSQLStore(
@@ -140,6 +149,15 @@ func NewStores(cfg *Config, clock clock.Clock) (*stores, error) {
 		})
 		if err != nil {
 			return stores, err
+		}
+
+		if !cfg.Postgres.SkipMigrations {
+			err = sqldb.ApplyAllMigrations(
+				sqlStore, db.LitdMigrationStreams,
+			)
+			if err != nil {
+				return stores, err
+			}
 		}
 
 		queries := sqlc.NewForType(sqlStore, sqlStore.BackendType)

@@ -12,6 +12,12 @@ import (
 	"github.com/lightningnetwork/lnd/sqldb/v2"
 )
 
+const (
+	// Migration6MigrateToSQL is the version of the migration that migrates
+	// the Bbolt db to SQL.
+	Migration6MigrateToSQL = 6
+)
+
 // postMigrationCheck is a function type for a function that performs a
 // post-migration check on the database.
 type postMigrationCheck func(context.Context, *sqlc.Queries) error
@@ -21,7 +27,18 @@ var (
 	// database migration with the version specified in the key has been
 	// applied. These functions are used to perform additional checks on the
 	// database state that are not fully expressible in SQL.
-	postMigrationChecks = map[uint]postMigrationCheck{}
+	postMigrationChecks = map[uint]postMigrationCheck{
+		Migration6MigrateToSQL: func(ctx context.Context,
+			q *sqlc.Queries) error {
+
+			// This is a no-op check for now, but we can add
+			// additional checks here in the future if needed.
+			log.Infof("Post-migration check for version %d "+
+				"completed successfully", Migration6MigrateToSQL)
+
+			return nil
+		},
+	}
 )
 
 // makePostStepCallbacks turns the post migration checks into a map of post
