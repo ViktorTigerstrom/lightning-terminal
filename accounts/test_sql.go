@@ -4,7 +4,7 @@ package accounts
 
 import (
 	"testing"
-
+	
 	"github.com/lightninglabs/lightning-terminal/db/sqlc"
 	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/sqldb/v2"

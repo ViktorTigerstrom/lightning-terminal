@@ -12,8 +12,10 @@ import (
 	"github.com/btcsuite/btclog/v2"
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database"
+	"github.com/golang-migrate/migrate/v4/database/pgx/v5"
 	"github.com/golang-migrate/migrate/v4/source/httpfs"
 	"github.com/lightninglabs/taproot-assets/fn"
+	"github.com/lightningnetwork/lnd/sqldb/v2"
 )
 
 const (
@@ -23,6 +25,15 @@ const (
 	//
 	// NOTE: This MUST be updated when a new migration is added.
 	LatestMigrationVersion = 5
+
+	// LatestDevMigrationVersion is the latest dev migration version of the
+	// database. This is used to implement downgrade protection for the
+	// daemon. This represents the latest number used in the migrations_dev
+	// directory.
+	//
+	// NOTE: This MUST be updated when a migration is added or removed, from
+	// the migrations_dev directory.
+	LatestDevMigrationVersion = 1
 )
 
 // MigrationTarget is a functional option that can be passed to applyMigrations
@@ -120,7 +131,7 @@ func applyMigrations(fs fs.FS, driver database.Driver, path, dbName string,
 	targetVersion MigrationTarget, opts *migrateOptions) error {
 
 	// With the migrate instance open, we'll create a new migration source
-	// using the embedded file system stored in sqlSchemas. The library
+	// using the embedded file system stored in SqlSchemas. The library
 	// we're using can't handle a raw file system interface, so we wrap it
 	// in this intermediate layer.
 	migrateFileServer, err := httpfs.New(http.FS(fs), path)
@@ -278,4 +289,55 @@ func (t *replacerFile) Close() error {
 	// We already fully read and then closed the file when creating this
 	// instance, so there's nothing to do for us here.
 	return nil
+}
+
+// MakeTestMigrationStreams creates the migration streams for the unit test
+// environment.
+//
+// NOTE: This function is not located in the migrationstreams package to avoid
+// cyclic dependencies. This test migration stream does not run the kvdb to sql
+// migration, as we already have separate unit tests which tests the migration.
+func MakeTestMigrationStreams() []sqldb.MigrationStream {
+	migStream := sqldb.MigrationStream{
+		MigrateTableName: pgx.DefaultMigrationsTable,
+		SQLFileDirectory: "sqlc/migrations",
+		Schemas:          SqlSchemas,
+
+		// LatestMigrationVersion is the latest migration version of the
+		// database.  This is used to implement downgrade protection for
+		// the daemon.
+		//
+		// NOTE: This MUST be updated when a new migration is added.
+		LatestMigrationVersion: LatestMigrationVersion,
+
+		MakePostMigrationChecks: func(
+			db *sqldb.BaseDB) (map[uint]migrate.PostStepCallback,
+			error) {
+
+			return make(map[uint]migrate.PostStepCallback), nil
+		},
+	}
+
+	// IN DEV CASE:
+	migStreamDev := sqldb.MigrationStream{
+		MigrateTableName: pgx.DefaultMigrationsTable + "_dev",
+		SQLFileDirectory: "sqlc/migrations_dev",
+		Schemas:          SqlSchemas,
+
+		// LatestMigrationVersion is the latest migration version of the
+		// dev migrations database. This is used to implement downgrade
+		// protection for the daemon.
+		//
+		// NOTE: This MUST be updated when a new dev migration is added.
+		LatestMigrationVersion: LatestDevMigrationVersion,
+
+		MakePostMigrationChecks: func(
+			db *sqldb.BaseDB) (map[uint]migrate.PostStepCallback,
+			error) {
+
+			return make(map[uint]migrate.PostStepCallback), nil
+		},
+	}
+
+	return []sqldb.MigrationStream{migStream, migStreamDev}
 }

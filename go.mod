@@ -34,14 +34,15 @@ require (
 	github.com/lightninglabs/pool/poolrpc v1.0.1
 	github.com/lightninglabs/taproot-assets v0.6.0-rc3
 	github.com/lightninglabs/taproot-assets/taprpc v1.0.6
-	github.com/lightningnetwork/lnd v0.19.1-beta.rc1
+	github.com/lightningnetwork/lnd v0.19.1-beta
 	github.com/lightningnetwork/lnd/cert v1.2.2
 	github.com/lightningnetwork/lnd/clock v1.1.1
 	github.com/lightningnetwork/lnd/fn v1.2.3
 	github.com/lightningnetwork/lnd/fn/v2 v2.0.8
 	github.com/lightningnetwork/lnd/kvdb v1.4.16
-	github.com/lightningnetwork/lnd/sqldb v1.0.9
-	github.com/lightningnetwork/lnd/tlv v1.3.1
+	github.com/lightningnetwork/lnd/sqldb v1.0.10
+	github.com/lightningnetwork/lnd/sqldb/v2 v2.0.0-00010101000000-000000000000
+	github.com/lightningnetwork/lnd/tlv v1.3.2
 	github.com/lightningnetwork/lnd/tor v1.1.6
 	github.com/mwitkow/go-conntrack v0.0.0-20190716064945-2f068394615f
 	github.com/mwitkow/grpc-proxy v0.0.0-20230212185441-f345521cb9c9
@@ -151,7 +152,6 @@ require (
 	github.com/lightningnetwork/lightning-onion v1.2.1-0.20240712235311-98bd56499dfb // indirect
 	github.com/lightningnetwork/lnd/healthcheck v1.2.6 // indirect
 	github.com/lightningnetwork/lnd/queue v1.1.1 // indirect
-	github.com/lightningnetwork/lnd/sqldb/v2 v2.0.0-00010101000000-000000000000 // indirect
 	github.com/lightningnetwork/lnd/ticker v1.1.1 // indirect
 	github.com/ltcsuite/ltcd v0.0.0-20190101042124-f37f8bf35796 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
@@ -249,7 +249,7 @@ replace google.golang.org/protobuf => github.com/lightninglabs/protobuf-go-hex-d
 // automatically, so we need to add it manually.
 replace github.com/golang-migrate/migrate/v4 => github.com/lightninglabs/migrate/v4 v4.18.2-9023d66a-fork-pr-2
 
-replace github.com/lightningnetwork/lnd => github.com/ViktorTigerstrom/lnd v0.0.0-20250707144606-394a7dfc454a
+replace github.com/lightningnetwork/lnd => github.com/ViktorTigerstrom/lnd v0.0.0-20250710121612-a88fb038013b
 
 // TODO: replace this with your own local fork
 replace github.com/lightningnetwork/lnd/sqldb/v2 => ../../lnd_forked/lnd/sqldb

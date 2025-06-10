@@ -9,12 +9,11 @@ import (
 	"time"
 
 	"github.com/lightninglabs/lightning-terminal/accounts"
-	"github.com/lightninglabs/lightning-terminal/db"
-	"github.com/lightninglabs/lightning-terminal/db/sqlc"
+	"github.com/lightninglabs/lightning-terminal/db/sqlcmig6"
 	"github.com/lightninglabs/lightning-terminal/session"
 	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/fn"
-	"github.com/lightningnetwork/lnd/sqldb"
+	"github.com/lightningnetwork/lnd/sqldb/v2"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/exp/rand"
 )
@@ -53,29 +52,25 @@ func TestFirewallDBMigration(t *testing.T) {
 		t.Skipf("Skipping Firewall DB migration test for kvdb build")
 	}
 
-	makeSQLDB := func(t *testing.T, sessionsStore session.Store) (*SQLDB,
-		*db.TransactionExecutor[SQLQueries]) {
+	makeSQLDB := func(t *testing.T,
+		sStore session.Store) *SQLMig6QueriesExecutor[SQLMig6Queries] {
 
-		testDBStore := NewTestDBWithSessions(t, sessionsStore, clock)
+		testDBStore := NewTestDBWithSessions(t, sStore, clock)
 
 		store, ok := testDBStore.(*SQLDB)
 		require.True(t, ok)
 
 		baseDB := store.BaseDB
 
-		genericExecutor := db.NewTransactionExecutor(
-			baseDB, func(tx *sql.Tx) SQLQueries {
-				return baseDB.WithTx(tx)
-			},
-		)
+		queries := sqlcmig6.NewForType(baseDB, baseDB.BackendType)
 
-		return store, genericExecutor
+		return NewSQLMig6QueriesExecutor(baseDB, queries)
 	}
 
 	// The assertMigrationResults function will currently assert that
 	// the migrated kv stores entries in the SQLDB match the original kv
 	// stores entries in the BoltDB.
-	assertMigrationResults := func(t *testing.T, sqlStore *SQLDB,
+	assertMigrationResults := func(t *testing.T, sqlStore SQLMig6Queries,
 		kvEntries []*kvEntry) {
 
 		var (
@@ -146,7 +141,7 @@ func TestFirewallDBMigration(t *testing.T) {
 			if entry.groupAlias.IsNone() {
 				sqlVal, err := sqlStore.GetGlobalKVStoreRecord(
 					ctx,
-					sqlc.GetGlobalKVStoreRecordParams{
+					sqlcmig6.GetGlobalKVStoreRecordParams{
 						Key:    entry.key,
 						Perm:   entry.perm,
 						RuleID: ruleID,
@@ -164,7 +159,7 @@ func TestFirewallDBMigration(t *testing.T) {
 
 				v, err := sqlStore.GetGroupKVStoreRecord(
 					ctx,
-					sqlc.GetGroupKVStoreRecordParams{
+					sqlcmig6.GetGroupKVStoreRecordParams{
 						Key:    entry.key,
 						Perm:   entry.perm,
 						RuleID: ruleID,
@@ -189,7 +184,7 @@ func TestFirewallDBMigration(t *testing.T) {
 
 				sqlVal, err := sqlStore.GetFeatureKVStoreRecord(
 					ctx,
-					sqlc.GetFeatureKVStoreRecordParams{
+					sqlcmig6.GetFeatureKVStoreRecordParams{
 						Key:    entry.key,
 						Perm:   entry.perm,
 						RuleID: ruleID,
@@ -293,21 +288,26 @@ func TestFirewallDBMigration(t *testing.T) {
 
 			// Create the SQL store that we will migrate the data
 			// to.
-			sqlStore, txEx := makeSQLDB(t, sessionsStore)
+			txEx := makeSQLDB(t, sessionsStore)
 
 			// Perform the migration.
 			var opts sqldb.MigrationTxOptions
 			err = txEx.ExecTx(ctx, &opts,
-				func(tx SQLQueries) error {
-					return MigrateFirewallDBToSQL(
+				func(tx SQLMig6Queries) error {
+					err = MigrateFirewallDBToSQL(
 						ctx, firewallStore.DB, tx,
 					)
-				},
+					if err != nil {
+						return err
+					}
+
+					// Assert migration results.
+					assertMigrationResults(t, tx, entries)
+
+					return nil
+				}, sqldb.NoOpReset,
 			)
 			require.NoError(t, err)
-
-			// Assert migration results.
-			assertMigrationResults(t, sqlStore, entries)
 		})
 	}
 }

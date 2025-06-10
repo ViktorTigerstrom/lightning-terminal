@@ -3,10 +3,12 @@ package accounts
 import (
 	"context"
 	"fmt"
+	"github.com/lightninglabs/lightning-terminal/db"
+	"github.com/lightninglabs/lightning-terminal/db/sqlc"
 	"testing"
 	"time"
 
-	"github.com/lightninglabs/lightning-terminal/db/sqlc"
+	"github.com/lightninglabs/lightning-terminal/db/sqlcmig6"
 	"github.com/lightningnetwork/lnd/clock"
 	"github.com/lightningnetwork/lnd/fn"
 	"github.com/lightningnetwork/lnd/lnrpc"
@@ -29,24 +31,36 @@ func TestAccountStoreMigration(t *testing.T) {
 
 	// When using build tags that creates a kvdb store for NewTestDB, we
 	// skip this test as it is only applicable for postgres and sqlite tags.
-	store := NewTestDB(t, clock)
+	/*store := NewTestDB(t, clock)
 	if _, ok := store.(*BoltStore); ok {
 		t.Skipf("Skipping account store migration test for kvdb build")
-	}
+	}*/
 
 	makeSQLDB := func(t *testing.T) (*SQLStore,
-		*SQLQueriesExecutor[SQLQueries]) {
+		*SQLMig6QueriesExecutor[SQLMig6Queries]) {
 
-		testDBStore := NewTestDB(t, clock)
+		sqlDB := sqldb.NewTestSqliteDB(t, db.MakeTestMigrationStreams()).BaseDB
+
+		queriesmig6 := sqlcmig6.NewForType(sqlDB, sqlDB.BackendType)
+
+		queries := sqlc.NewForType(sqlDB, sqlDB.BackendType)
+		sqlStore := NewSQLStore(sqlDB, queries, clock)
+		t.Cleanup(func() {
+			require.NoError(t, sqlStore.Close())
+		})
+
+		return sqlStore, NewSQLMig6QueriesExecutor(sqlDB, queriesmig6)
+
+		/*testDBStore := NewTestDB(t, clock)
 
 		store, ok := testDBStore.(*SQLStore)
 		require.True(t, ok)
 
 		baseDB := store.BaseDB
 
-		queries := sqlc.NewForType(baseDB, baseDB.BackendType)
+		queries := sqlcmig6.NewForType(baseDB, baseDB.BackendType)
 
-		return store, NewSQLQueriesExecutor(baseDB, queries)
+		return store, NewSQLMig6QueriesExecutor(baseDB, queries)*/
 	}
 
 	assertMigrationResults := func(t *testing.T, sqlStore *SQLStore,
@@ -334,7 +348,7 @@ func TestAccountStoreMigration(t *testing.T) {
 			// Perform the migration.
 			var opts sqldb.MigrationTxOptions
 			err = txEx.ExecTx(ctx, &opts,
-				func(tx SQLQueries) error {
+				func(tx SQLMig6Queries) error {
 					return MigrateAccountStoreToSQL(
 						ctx, kvStore.DB, tx,
 					)

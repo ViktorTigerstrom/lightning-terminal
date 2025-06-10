@@ -7,7 +7,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/lightninglabs/lightning-terminal/db/sqlc"
+	"github.com/lightninglabs/lightning-terminal/db/sqlcmig6"
 	"github.com/lightningnetwork/lnd/fn"
 	"github.com/lightningnetwork/lnd/sqldb"
 	"go.etcd.io/bbolt"
@@ -67,6 +67,10 @@ func (e *kvEntry) namespacedKey() string {
 	return ns
 }
 
+// kvParams is a type alias for the InsertKVStoreRecordParams, to shorten the
+// line length in the migration code.
+type kvParams = sqlcmig6.InsertKVStoreRecordParams
+
 // MigrateFirewallDBToSQL runs the migration of the firwalldb stores from the
 // bbolt database to a SQL database. The migration is done in a single
 // transaction to ensure that all rows in the stores are migrated or none at
@@ -78,11 +82,11 @@ func (e *kvEntry) namespacedKey() string {
 // NOTE: As sessions may contain linked sessions and accounts, the sessions and
 // accounts sql migration MUST be run prior to this migration.
 func MigrateFirewallDBToSQL(ctx context.Context, kvStore *bbolt.DB,
-	sqlTx SQLQueries) error {
+	tx SQLMig6Queries) error {
 
 	log.Infof("Starting migration of the rules DB to SQL")
 
-	err := migrateKVStoresDBToSQL(ctx, kvStore, sqlTx)
+	err := migrateKVStoresDBToSQL(ctx, kvStore, tx)
 	if err != nil {
 		return err
 	}
@@ -99,7 +103,7 @@ func MigrateFirewallDBToSQL(ctx context.Context, kvStore *bbolt.DB,
 // database to the SQL database. The function also asserts that the
 // migrated values match the original values in the KV store.
 func migrateKVStoresDBToSQL(ctx context.Context, kvStore *bbolt.DB,
-	sqlTx SQLQueries) error {
+	sqlTx SQLMig6Queries) error {
 
 	log.Infof("Starting migration of the KV stores to SQL")
 
@@ -361,7 +365,7 @@ func collectKVPairs(bkt *bbolt.Bucket, errorOnBuckets, perm bool,
 }
 
 // insertPair inserts a single key-value pair into the SQL database.
-func insertPair(ctx context.Context, tx SQLQueries,
+func insertPair(ctx context.Context, tx SQLMig6Queries,
 	entry *kvEntry) (*sqlKvEntry, error) {
 
 	ruleID, err := tx.GetOrInsertRuleID(ctx, entry.ruleName)
@@ -369,7 +373,7 @@ func insertPair(ctx context.Context, tx SQLQueries,
 		return nil, err
 	}
 
-	p := sqlc.InsertKVStoreRecordParams{
+	p := sqlcmig6.InsertKVStoreRecordParams{
 		Perm:     entry.perm,
 		RuleID:   ruleID,
 		EntryKey: entry.key,
@@ -421,13 +425,13 @@ func insertPair(ctx context.Context, tx SQLQueries,
 
 // getSQLValue retrieves the key value for the given kvEntry from the SQL
 // database.
-func getSQLValue(ctx context.Context, tx SQLQueries,
+func getSQLValue(ctx context.Context, tx SQLMig6Queries,
 	entry *sqlKvEntry) ([]byte, error) {
 
 	switch {
 	case entry.featureID.Valid && entry.groupID.Valid:
 		return tx.GetFeatureKVStoreRecord(
-			ctx, sqlc.GetFeatureKVStoreRecordParams{
+			ctx, sqlcmig6.GetFeatureKVStoreRecordParams{
 				Perm:      entry.perm,
 				RuleID:    entry.ruleID,
 				GroupID:   entry.groupID,
@@ -437,7 +441,7 @@ func getSQLValue(ctx context.Context, tx SQLQueries,
 		)
 	case entry.groupID.Valid:
 		return tx.GetGroupKVStoreRecord(
-			ctx, sqlc.GetGroupKVStoreRecordParams{
+			ctx, sqlcmig6.GetGroupKVStoreRecordParams{
 				Perm:    entry.perm,
 				RuleID:  entry.ruleID,
 				GroupID: entry.groupID,
@@ -446,7 +450,7 @@ func getSQLValue(ctx context.Context, tx SQLQueries,
 		)
 	case !entry.featureID.Valid && !entry.groupID.Valid:
 		return tx.GetGlobalKVStoreRecord(
-			ctx, sqlc.GetGlobalKVStoreRecordParams{
+			ctx, sqlcmig6.GetGlobalKVStoreRecordParams{
 				Perm:   entry.perm,
 				RuleID: entry.ruleID,
 				Key:    entry.key,

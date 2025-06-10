@@ -149,10 +149,10 @@ func (s *PostgresStore) ExecuteMigrations(target MigrationTarget,
 		return fmt.Errorf("error creating postgres migration: %w", err)
 	}
 
-	postgresFS := newReplacerFS(sqlSchemas, postgresSchemaReplacements)
+	postgresFS := newReplacerFS(SqlSchemas, postgresSchemaReplacements)
 	return applyMigrations(
-		postgresFS, driver, "sqlc/migrations", s.cfg.DBName, target,
-		opts,
+		postgresFS, driver, "sqlc/migrations", s.cfg.DBName,
+		target, opts,
 	)
 }
 
@@ -168,7 +168,9 @@ func NewTestPostgresDB(t *testing.T) *sqldb.PostgresStore {
 		sqlFixture.TearDown(t)
 	})
 
-	return sqldb.NewTestPostgresDB(t, sqlFixture, LitdMigrationStreams)
+	return sqldb.NewTestPostgresDB(
+		t, sqlFixture, MakeTestMigrationStreams(),
+	)
 }
 
 // NewTestPostgresDBWithVersion is a helper function that creates a Postgres
