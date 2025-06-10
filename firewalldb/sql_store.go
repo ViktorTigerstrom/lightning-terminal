@@ -27,6 +27,16 @@ type SQLQueries interface {
 	SQLActionQueries
 }
 
+// SQLMig6Queries is a subset of the sqlcmig6.Queries interface that can be used
+// to interact with various firewalldb tables.
+type SQLMig6Queries interface {
+	sqldb.BaseQuerier
+
+	SQLMig6KVStoreQueries
+	SQLMig6PrivacyPairQueries
+	SQLMig6ActionQueries
+}
+
 // BatchedSQLQueries combines the SQLQueries interface with the BatchedTx
 // interface, allowing for multiple queries to be executed in single SQL
 // transaction.

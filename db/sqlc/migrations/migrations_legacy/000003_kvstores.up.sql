@@ -2,7 +2,7 @@
 -- known to lit and used by the firewall db.
 CREATE TABLE IF NOT EXISTS rules (
     -- The auto incrementing primary key.
-    id INTEGER PRIMARY KEY,
+    id BIGINT PRIMARY KEY,
 
     -- The unique name of the rule.
     name TEXT NOT NULL
@@ -13,7 +13,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS rules_name_idx ON rules (name);
 -- kvstores can be associated with.
 CREATE TABLE IF NOT EXISTS features (
     -- The auto incrementing primary key.
-    id INTEGER PRIMARY KEY,
+    id BIGINT PRIMARY KEY,
 
     -- The unique name of the feature.
     name TEXT NOT NULL
@@ -24,7 +24,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS features_name_idx ON features (name);
 -- by the rule name, session ID, and feature name.
 CREATE TABLE IF NOT EXISTS kvstores (
     -- The auto incrementing primary key.
-    id INTEGER PRIMARY KEY,
+    id BIGINT PRIMARY KEY,
 
     -- Whether this record is part of the permanent store.
     -- If false, it will be deleted on start-up.

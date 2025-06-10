@@ -1,10 +1,18 @@
 version: "2"
 sql:
   - engine: "postgresql"
-    schema: "db/sqlc/migrations"
-    queries: "db/sqlc/queries"
+    schema: "db/sqlc/migrations/*"
+    queries: "db/sqlc/queries/*"
     gen:
       go:
         out: db/sqlc
         package: sqlc
+        emit_interface: true
+  - engine: "postgresql"
+    schema: "db/sqlc/migrations/migrations_legacy"
+    queries: "db/sqlc/queries/queries_legacy"
+    gen:
+      go:
+        out: db/sqlcmig6
+        package: sqlcmig6
         emit_interface: true

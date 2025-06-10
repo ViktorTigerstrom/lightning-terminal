@@ -1,6 +1,6 @@
 CREATE TABLE IF NOT EXISTS accounts (
     -- The auto incrementing primary key.
-    id INTEGER PRIMARY KEY,
+    id BIGINT PRIMARY KEY,
 
     -- The ID that was used to identify the account in the legacy KVDB store.
     -- In order to avoid breaking the API, we keep this field here so that

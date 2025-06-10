@@ -1,7 +1,7 @@
 -- The sessions table contains LNC session related information.
 CREATE TABLE IF NOT EXISTS sessions (
     -- The auto incrementing primary key.
-    id INTEGER PRIMARY KEY,
+    id BIGINT PRIMARY KEY,
 
     -- The ID that was used to identify the session in the legacy KVDB store.
     -- This is derived directly from the local_public_key. In order to avoid
@@ -74,7 +74,7 @@ CREATE INDEX IF NOT EXISTS sessions_group_id_idx ON sessions(group_id);
 -- that are associated with a session.
 CREATE TABLE IF NOT EXISTS session_macaroon_permissions (
     -- The auto incrementing primary key.
-    id INTEGER PRIMARY KEY,
+    id BIGINT PRIMARY KEY,
 
     -- The ID of the session in the sessions table that this permission is
     -- associated with.
@@ -92,7 +92,7 @@ CREATE INDEX IF NOT EXISTS sessions_mac_perms_idx ON session_macaroon_permission
 -- associated with a session.
 CREATE TABLE IF NOT EXISTS session_macaroon_caveats (
     -- The auto incrementing primary key.
-    id INTEGER PRIMARY KEY,
+    id BIGINT PRIMARY KEY,
 
     -- The ID of the session in the sessions table that this caveat is
     -- associated with.

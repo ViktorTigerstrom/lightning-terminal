@@ -1,6 +1,6 @@
 CREATE TABLE IF NOT EXISTS actions(
     -- The ID of the action.
-    id INTEGER PRIMARY KEY,
+    id BIGINT PRIMARY KEY,
 
     -- The session ID of the session that this action is associated with.
     -- This may be null for actions that are not coupled to a session.

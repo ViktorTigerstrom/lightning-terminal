@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/lightninglabs/lightning-terminal/db/sqlc"
+	"github.com/lightninglabs/lightning-terminal/db/sqlcmig6"
 	"path/filepath"
 
 	"github.com/lightninglabs/lightning-terminal/accounts"
@@ -151,7 +152,8 @@ func NewStores(ctx context.Context, cfg *Config,
 		stores.closeFns["sqlite"] = sqlStore.BaseDB.Close
 
 		err = migrateStores(
-			ctx, cfg, sqlStore.BaseDB, acctStore, sessStore, clock,
+			ctx, cfg, sqlStore.BaseDB, queries, acctStore,
+			sessStore, clock,
 		)
 		if err != nil {
 			return stores, err
@@ -200,7 +202,8 @@ func NewStores(ctx context.Context, cfg *Config,
 		stores.closeFns["postgres"] = sqlStore.BaseDB.Close
 
 		err = migrateStores(
-			ctx, cfg, sqlStore.BaseDB, acctStore, sessStore, clock,
+			ctx, cfg, sqlStore.BaseDB, queries, acctStore,
+			sessStore, clock,
 		)
 		if err != nil {
 			return stores, err
@@ -244,9 +247,8 @@ func NewStores(ctx context.Context, cfg *Config,
 	return stores, nil
 }
 
-func migrateStores(ctx context.Context, cfg *Config, sqlDB *db.BaseDB,
-	acctStore *accounts.SQLStore, sessStore *session.SQLStore,
-	clock clock.Clock) error {
+func migrateStores(ctx context.Context, cfg *Config, sqlDB *sqldb.BaseDB,
+	q *sqlcmig6.Queries, clock clock.Clock) error {
 
 	if !cfg.MigrateToSql {
 		log.Tracef("Skipping migrations of kvdb database to SQLite, " +
@@ -283,9 +285,7 @@ func migrateStores(ctx context.Context, cfg *Config, sqlDB *db.BaseDB,
 		return err
 	}
 
-	err = accounts.MigrateAccountStoreToSQL(
-		ctx, accountStore.DB, acctStore.WithTx(tx),
-	)
+	err = accounts.MigrateAccountStoreToSQL(ctx, accountStore.DB, q)
 	if err != nil {
 		return fmt.Errorf("error migrating account store to SQL: %v",
 			err)
@@ -293,17 +293,29 @@ func migrateStores(ctx context.Context, cfg *Config, sqlDB *db.BaseDB,
 
 	sessionStore, err := session.NewDB(
 		filepath.Dir(cfg.MacaroonPath), session.DBFilename, clock,
-		acctStore,
+		accountStore,
 	)
 	if err != nil {
 		return err
 	}
 
-	err = session.MigrateSessionStoreToSQL(
-		ctx, sessionStore.DB, sessStore.WithTx(tx),
-	)
+	err = session.MigrateSessionStoreToSQL(ctx, sessionStore.DB, q)
 	if err != nil {
 		return fmt.Errorf("error migrating session store to SQL: %v",
+			err)
+	}
+
+	firewallStore, err := firewalldb.NewBoltDB(
+		filepath.Dir(cfg.MacaroonPath), firewalldb.DBFilename,
+		sessionStore, accountStore, clock,
+	)
+	if err != nil {
+		return err
+	}
+
+	err = firewalldb.MigrateFirewallDBToSQL(ctx, firewallStore.DB, q)
+	if err != nil {
+		return fmt.Errorf("error migrating firewalldb store to SQL: %v",
 			err)
 	}
 
