@@ -2,7 +2,7 @@
 // versions:
 //   sqlc v1.25.0
 
-package sqlc
+package sqlcmig6
 
 import (
 	"database/sql"
@@ -125,10 +125,4 @@ type SessionMacaroonPermission struct {
 type SessionPrivacyFlag struct {
 	SessionID int64
 	Flag      int32
-}
-
-type Testtable struct {
-	ID    int64
-	Alias int64
-	Label sql.NullString
 }

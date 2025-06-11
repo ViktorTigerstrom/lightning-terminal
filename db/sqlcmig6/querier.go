@@ -2,7 +2,7 @@
 // versions:
 //   sqlc v1.25.0
 
-package sqlc
+package sqlcmig6
 
 import (
 	"context"
@@ -54,7 +54,6 @@ type Querier interface {
 	InsertSessionMacaroonCaveat(ctx context.Context, arg InsertSessionMacaroonCaveatParams) error
 	InsertSessionMacaroonPermission(ctx context.Context, arg InsertSessionMacaroonPermissionParams) error
 	InsertSessionPrivacyFlag(ctx context.Context, arg InsertSessionPrivacyFlagParams) error
-	InsertTesttable(ctx context.Context, arg InsertTesttableParams) (int64, error)
 	ListAccountInvoices(ctx context.Context, accountID int64) ([]AccountInvoice, error)
 	ListAccountPayments(ctx context.Context, accountID int64) ([]AccountPayment, error)
 	ListAllAccounts(ctx context.Context) ([]Account, error)

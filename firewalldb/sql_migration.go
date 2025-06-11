@@ -6,14 +6,15 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"github.com/lightninglabs/lightning-terminal/db/sqlc"
+	
+	"github.com/lightninglabs/lightning-terminal/db/sqlcmig6"
 	"github.com/lightningnetwork/lnd/sqldb"
 	"go.etcd.io/bbolt"
 )
 
 // kvParams is a type alias for the InsertKVStoreRecordParams, to shorten the
 // line length in the migration code.
-type kvParams = sqlc.InsertKVStoreRecordParams
+type kvParams = sqlcmig6.InsertKVStoreRecordParams
 
 // MigrateFirewallDBToSQL runs the migration of the firwalldb stores from the
 // bbolt database to a SQL database. The migration is done in a single
@@ -26,7 +27,7 @@ type kvParams = sqlc.InsertKVStoreRecordParams
 // NOTE: As sessions may contain linked sessions and accounts, the sessions and
 // accounts sql migration MUST be run prior to this migration.
 func MigrateFirewallDBToSQL(ctx context.Context, kvStore *bbolt.DB,
-	tx SQLQueries) error {
+	tx SQLMig6Queries) error {
 
 	log.Infof("Starting migration of the rules DB to SQL")
 
@@ -55,7 +56,7 @@ func MigrateFirewallDBToSQL(ctx context.Context, kvStore *bbolt.DB,
 // exist in the KV store, and can be sure that the kv store actually follows
 // the expected structure.
 func migrateKVStoresDBToSQL(ctx context.Context, kvStore *bbolt.DB,
-	sqlTx SQLQueries) error {
+	sqlTx SQLMig6Queries) error {
 
 	log.Infof("Starting migration of the KV stores to SQL")
 
@@ -130,7 +131,7 @@ func migrateKVStoresDBToSQL(ctx context.Context, kvStore *bbolt.DB,
 		case param.FeatureID.Valid && param.SessionID.Valid:
 			migratedValue, err := sqlTx.GetFeatureKVStoreRecord(
 				ctx,
-				sqlc.GetFeatureKVStoreRecordParams{
+				sqlcmig6.GetFeatureKVStoreRecordParams{
 					Key:       param.EntryKey,
 					Perm:      param.Perm,
 					RuleID:    param.RuleID,
@@ -154,7 +155,7 @@ func migrateKVStoresDBToSQL(ctx context.Context, kvStore *bbolt.DB,
 		case param.SessionID.Valid:
 			migratedValue, err := sqlTx.GetSessionKVStoreRecord(
 				ctx,
-				sqlc.GetSessionKVStoreRecordParams{
+				sqlcmig6.GetSessionKVStoreRecordParams{
 					Key:       param.EntryKey,
 					Perm:      param.Perm,
 					RuleID:    param.RuleID,
@@ -177,7 +178,7 @@ func migrateKVStoresDBToSQL(ctx context.Context, kvStore *bbolt.DB,
 		case !param.FeatureID.Valid && !param.SessionID.Valid:
 			migratedValue, err := sqlTx.GetGlobalKVStoreRecord(
 				ctx,
-				sqlc.GetGlobalKVStoreRecordParams{
+				sqlcmig6.GetGlobalKVStoreRecordParams{
 					Key:    param.EntryKey,
 					Perm:   param.Perm,
 					RuleID: param.RuleID,
@@ -208,7 +209,7 @@ func migrateKVStoresDBToSQL(ctx context.Context, kvStore *bbolt.DB,
 
 // processRuleBucket processes a single rule bucket, which contains the
 // global and session-kv-store key buckets.
-func processRuleBucket(ctx context.Context, sqlTx SQLQueries, perm bool,
+func processRuleBucket(ctx context.Context, sqlTx SQLMig6Queries, perm bool,
 	ruleSqlId int64, ruleBucket *bbolt.Bucket) ([]kvParams, error) {
 
 	var params []kvParams
@@ -267,8 +268,9 @@ func processRuleBucket(ctx context.Context, sqlTx SQLQueries, perm bool,
 // which contains the global key-value store records for the rule.
 // It inserts the records into the SQL database and asserts that
 // the migrated values match the original values in the KV store.
-func processGlobalRuleBucket(ctx context.Context, sqlTx SQLQueries, perm bool,
-	ruleSqlId int64, globalBucket *bbolt.Bucket) ([]kvParams, error) {
+func processGlobalRuleBucket(ctx context.Context, sqlTx SQLMig6Queries,
+	perm bool, ruleSqlId int64,
+	globalBucket *bbolt.Bucket) ([]kvParams, error) {
 
 	var params []kvParams
 
@@ -299,7 +301,7 @@ func processGlobalRuleBucket(ctx context.Context, sqlTx SQLQueries, perm bool,
 
 // processSessionBucket processes the session-kv-store bucket under a rule
 // bucket, which contains the group-id buckets for that rule.
-func processSessionBucket(ctx context.Context, sqlTx SQLQueries, perm bool,
+func processSessionBucket(ctx context.Context, sqlTx SQLMig6Queries, perm bool,
 	ruleSqlId int64, mainSessionBucket *bbolt.Bucket) ([]kvParams, error) {
 
 	var params []kvParams
@@ -333,7 +335,7 @@ func processSessionBucket(ctx context.Context, sqlTx SQLQueries, perm bool,
 // session-wide kv records and as well as the feature-kv-stores key bucket for
 // that group. For the session-wide kv records, it inserts the records into the
 // SQL database and asserts that the migrated values match the original values.
-func processGroupBucket(ctx context.Context, sqlTx SQLQueries, perm bool,
+func processGroupBucket(ctx context.Context, sqlTx SQLMig6Queries, perm bool,
 	ruleSqlId int64, groupAlias []byte,
 	groupBucket *bbolt.Bucket) ([]kvParams, error) {
 
@@ -407,8 +409,8 @@ func processGroupBucket(ctx context.Context, sqlTx SQLQueries, perm bool,
 
 // processFeatureStoreBucket processes the feature-kv-store bucket under a
 // group bucket, which contains the feature specific buckets for that group.
-func processFeatureStoreBucket(ctx context.Context, sqlTx SQLQueries, perm bool,
-	ruleSqlId int64, groupSqlId int64,
+func processFeatureStoreBucket(ctx context.Context, sqlTx SQLMig6Queries,
+	perm bool, ruleSqlId int64, groupSqlId int64,
 	featureStoreBucket *bbolt.Bucket) ([]kvParams, error) {
 
 	var params []kvParams
@@ -451,8 +453,8 @@ func processFeatureStoreBucket(ctx context.Context, sqlTx SQLQueries, perm bool,
 // contains the feature specific key-value store records for that group.
 // It inserts the records into the SQL database and asserts that
 // the migrated values match the original values in the KV store.
-func processFeatureNameBucket(ctx context.Context, sqlTx SQLQueries, perm bool,
-	ruleSqlId int64, groupSqlId int64, featureSqlId int64,
+func processFeatureNameBucket(ctx context.Context, sqlTx SQLMig6Queries,
+	perm bool, ruleSqlId int64, groupSqlId int64, featureSqlId int64,
 	featureNameBucket *bbolt.Bucket) ([]kvParams, error) {
 
 	var params []kvParams

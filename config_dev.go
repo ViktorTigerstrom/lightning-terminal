@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/lightninglabs/lightning-terminal/db/sqlc"
+	"github.com/lightninglabs/lightning-terminal/db/sqlcmig6"
 	"path/filepath"
 
 	"github.com/lightninglabs/lightning-terminal/accounts"
@@ -243,8 +244,7 @@ func NewStores(ctx context.Context, cfg *Config,
 }
 
 func migrateStores(ctx context.Context, cfg *Config, sqlDB *sqldb.BaseDB,
-	q *sqlc.Queries, acctStore *accounts.SQLStore,
-	sessStore *session.SQLStore, clock clock.Clock) error {
+	q *sqlcmig6.Queries, clock clock.Clock) error {
 
 	if !cfg.MigrateToSql {
 		log.Tracef("Skipping migrations of kvdb database to SQLite, " +
@@ -289,7 +289,7 @@ func migrateStores(ctx context.Context, cfg *Config, sqlDB *sqldb.BaseDB,
 
 	sessionStore, err := session.NewDB(
 		filepath.Dir(cfg.MacaroonPath), session.DBFilename, clock,
-		acctStore,
+		accountStore,
 	)
 	if err != nil {
 		return err
@@ -303,7 +303,7 @@ func migrateStores(ctx context.Context, cfg *Config, sqlDB *sqldb.BaseDB,
 
 	firewallStore, err := firewalldb.NewBoltDB(
 		filepath.Dir(cfg.MacaroonPath), firewalldb.DBFilename,
-		sessStore, acctStore, clock,
+		sessionStore, accountStore, clock,
 	)
 	if err != nil {
 		return err
