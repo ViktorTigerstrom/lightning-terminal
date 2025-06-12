@@ -6,8 +6,17 @@ import (
 	"github.com/lightningnetwork/lnd/sqldb/v2"
 )
 
-var (
-	LitdMigrationStream = sqldb.MigrationStream{
+func MakeMigrationStreams(
+	extraChecks map[uint]PostMigrationChecker) []sqldb.MigrationStream {
+
+	checks := postMigrationChecks
+
+	for version, check := range extraChecks {
+		// Add or overwrite the checks map with the extra check.
+		checks[version] = check
+	}
+
+	migStream := sqldb.MigrationStream{
 		MigrateTableName: pgx.DefaultMigrationsTable,
 		SQLFileDirectory: "sqlc/migrations",
 		Schemas:          sqlSchemas,
@@ -23,9 +32,10 @@ var (
 			db *sqldb.BaseDB) (map[uint]migrate.PostStepCallback,
 			error) {
 
-			return makePostStepCallbacks(db, postMigrationChecks),
+			return makePostStepCallbacks(db, checks),
 				nil
 		},
 	}
-	LitdMigrationStreams = []sqldb.MigrationStream{LitdMigrationStream}
-)
+
+	return []sqldb.MigrationStream{migStream}
+}

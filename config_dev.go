@@ -4,16 +4,19 @@ package terminal
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"path/filepath"
+
 	"github.com/lightninglabs/lightning-terminal/db/sqlc"
 	"github.com/lightninglabs/lightning-terminal/db/sqlcmig6"
-	"path/filepath"
 
 	"github.com/lightninglabs/lightning-terminal/accounts"
 	"github.com/lightninglabs/lightning-terminal/db"
 	"github.com/lightninglabs/lightning-terminal/firewalldb"
 	"github.com/lightninglabs/lightning-terminal/session"
 	"github.com/lightningnetwork/lnd/clock"
+	"github.com/lightningnetwork/lnd/fn/v2"
 	"github.com/lightningnetwork/lnd/sqldb/v2"
 )
 
@@ -123,9 +126,15 @@ func NewStores(ctx context.Context, cfg *Config,
 			return stores, err
 		}
 
+		extraChecks := map[uint]db.PostMigrationChecker{
+			db.Migration6MigrateToSQL: kvdbToSqlMigrationCallback(
+				cfg, sqlStore.BaseDB, clock,
+			),
+		}
+
 		if !cfg.Sqlite.SkipMigrations {
 			err = sqldb.ApplyAllMigrations(
-				sqlStore, db.LitdMigrationStreams,
+				sqlStore, db.MakeMigrationStreams(extraChecks),
 			)
 			if err != nil {
 				return stores, fmt.Errorf("error applying "+
@@ -151,14 +160,6 @@ func NewStores(ctx context.Context, cfg *Config,
 		stores.firewall = firewalldb.NewDB(firewallStore)
 		stores.closeFns["sqlite"] = sqlStore.BaseDB.Close
 
-		err = migrateStores(
-			ctx, cfg, sqlStore.BaseDB, queries, acctStore,
-			sessStore, clock,
-		)
-		if err != nil {
-			return stores, err
-		}
-
 	case DatabaseBackendPostgres:
 		sqlStore, err := sqldb.NewPostgresStore(&sqldb.PostgresConfig{
 			Dsn:                cfg.Postgres.DSN(false),
@@ -173,9 +174,15 @@ func NewStores(ctx context.Context, cfg *Config,
 			return stores, err
 		}
 
-		if !cfg.Sqlite.SkipMigrations {
+		extraChecks := map[uint]db.PostMigrationChecker{
+			db.Migration6MigrateToSQL: kvdbToSqlMigrationCallback(
+				cfg, sqlStore.BaseDB, clock,
+			),
+		}
+
+		if !cfg.Postgres.SkipMigrations {
 			err = sqldb.ApplyAllMigrations(
-				sqlStore, db.LitdMigrationStreams,
+				sqlStore, db.MakeMigrationStreams(extraChecks),
 			)
 			if err != nil {
 				return stores, fmt.Errorf("error applying "+
@@ -200,14 +207,6 @@ func NewStores(ctx context.Context, cfg *Config,
 		stores.sessions = sessStore
 		stores.firewall = firewalldb.NewDB(firewallStore)
 		stores.closeFns["postgres"] = sqlStore.BaseDB.Close
-
-		err = migrateStores(
-			ctx, cfg, sqlStore.BaseDB, queries, acctStore,
-			sessStore, clock,
-		)
-		if err != nil {
-			return stores, err
-		}
 
 	default:
 		accountStore, err := accounts.NewBoltStore(
@@ -247,83 +246,89 @@ func NewStores(ctx context.Context, cfg *Config,
 	return stores, nil
 }
 
-func migrateStores(ctx context.Context, cfg *Config, sqlDB *sqldb.BaseDB,
-	q *sqlcmig6.Queries, clock clock.Clock) error {
-
-	if !cfg.MigrateToSql {
-		log.Tracef("Skipping migrations of kvdb database to SQLite, " +
-			"as the migrate-to-sql flag is not set")
-
-		return nil
-	}
+func kvdbToSqlMigrationCallback(cfg *Config, sqlDB *sqldb.BaseDB,
+	clock clock.Clock) db.PostMigrationChecker {
 
 	var (
 		writeTxOpts db.QueriesTxOptions
 	)
 
-	tx, err := sqlDB.BeginTx(ctx, &writeTxOpts)
-	if err != nil {
-		return fmt.Errorf("error starting migration tx: %w", err)
-	}
+	check := func(ctx context.Context, q6 fn.Option[*sqlcmig6.Queries],
+		_ fn.Option[*sqlc.Queries]) error {
 
-	// Ensure we roll back the migration on any error path
-	defer func() {
+		q, err := q6.UnwrapOrErr(errors.New("sqlcmig6 queries missing"))
 		if err != nil {
-			rollBackErr := tx.Rollback()
-			if rollBackErr != nil {
-				log.Errorf("error rolling back migration tx: "+
-					"%v", err)
-			}
+			return fmt.Errorf("error getting sqlcmig6 queries: %w",
+				err)
 		}
-	}()
 
-	accountStore, err := accounts.NewBoltStore(
-		filepath.Dir(cfg.MacaroonPath), accounts.DBFilename,
-		clock,
-	)
-	if err != nil {
-		return err
+		tx, err := sqlDB.BeginTx(ctx, &writeTxOpts)
+		if err != nil {
+			return fmt.Errorf("error starting migration tx: %w",
+				err)
+		}
+
+		// Ensure we roll back the migration on any error path
+		defer func() {
+			if err != nil {
+				rollBackErr := tx.Rollback()
+				if rollBackErr != nil {
+					log.Errorf("error rolling back "+
+						"migration tx: %v", err)
+				}
+			}
+		}()
+
+		accountStore, err := accounts.NewBoltStore(
+			filepath.Dir(cfg.MacaroonPath), accounts.DBFilename,
+			clock,
+		)
+		if err != nil {
+			return err
+		}
+
+		err = accounts.MigrateAccountStoreToSQL(ctx, accountStore.DB, q)
+		if err != nil {
+			return fmt.Errorf("error migrating account store to "+
+				"SQL: %v", err)
+		}
+
+		sessionStore, err := session.NewDB(
+			filepath.Dir(cfg.MacaroonPath), session.DBFilename,
+			clock, accountStore,
+		)
+		if err != nil {
+			return err
+		}
+
+		err = session.MigrateSessionStoreToSQL(ctx, sessionStore.DB, q)
+		if err != nil {
+			return fmt.Errorf("error migrating session store to "+
+				"SQL: %v", err)
+		}
+
+		firewallStore, err := firewalldb.NewBoltDB(
+			filepath.Dir(cfg.MacaroonPath), firewalldb.DBFilename,
+			sessionStore, accountStore, clock,
+		)
+		if err != nil {
+			return err
+		}
+
+		err = firewalldb.MigrateFirewallDBToSQL(ctx, firewallStore.DB, q)
+		if err != nil {
+			return fmt.Errorf("error migrating firewalldb store "+
+				"to SQL: %v", err)
+		}
+
+		// The migrations succeeded! We're therefore good to commit the tx.
+		err = tx.Commit()
+		if err != nil {
+			return fmt.Errorf("committing migration tx: %w", err)
+		}
+
+		return nil
 	}
 
-	err = accounts.MigrateAccountStoreToSQL(ctx, accountStore.DB, q)
-	if err != nil {
-		return fmt.Errorf("error migrating account store to SQL: %v",
-			err)
-	}
-
-	sessionStore, err := session.NewDB(
-		filepath.Dir(cfg.MacaroonPath), session.DBFilename, clock,
-		accountStore,
-	)
-	if err != nil {
-		return err
-	}
-
-	err = session.MigrateSessionStoreToSQL(ctx, sessionStore.DB, q)
-	if err != nil {
-		return fmt.Errorf("error migrating session store to SQL: %v",
-			err)
-	}
-
-	firewallStore, err := firewalldb.NewBoltDB(
-		filepath.Dir(cfg.MacaroonPath), firewalldb.DBFilename,
-		sessionStore, accountStore, clock,
-	)
-	if err != nil {
-		return err
-	}
-
-	err = firewalldb.MigrateFirewallDBToSQL(ctx, firewallStore.DB, q)
-	if err != nil {
-		return fmt.Errorf("error migrating firewalldb store to SQL: %v",
-			err)
-	}
-
-	// The migrations succeeded! We're therefore good to commit the tx.
-	err = tx.Commit()
-	if err != nil {
-		return fmt.Errorf("committing migration tx: %w", err)
-	}
-
-	return err
+	return *db.NewPostMigrationChecker(db.Migration6MigrateToSQL, check)
 }

@@ -168,7 +168,7 @@ func NewTestPostgresDB(t *testing.T) *sqldb.PostgresStore {
 		sqlFixture.TearDown(t)
 	})
 
-	return sqldb.NewTestPostgresDB(t, sqlFixture, LitdMigrationStreams)
+	return sqldb.NewTestPostgresDB(t, sqlFixture, MakeMigrationStreams(nil))
 }
 
 // NewTestPostgresDBWithVersion is a helper function that creates a Postgres

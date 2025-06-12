@@ -5,7 +5,7 @@ require (
 	github.com/btcsuite/btcd/btcec/v2 v2.3.4
 	github.com/btcsuite/btcd/btcutil v1.1.5
 	github.com/btcsuite/btcd/chaincfg/chainhash v1.1.0
-	github.com/btcsuite/btclog/v2 v2.0.1-0.20250110154127-3ae4bf1cb318
+	github.com/btcsuite/btclog/v2 v2.0.1-0.20250602222548-9967d19bb084
 	github.com/btcsuite/btcwallet/walletdb v1.5.1
 	github.com/davecgh/go-spew v1.1.1
 	github.com/go-errors/errors v1.0.1
@@ -37,9 +37,9 @@ require (
 	github.com/lightningnetwork/lnd/fn v1.2.3
 	github.com/lightningnetwork/lnd/fn/v2 v2.0.8
 	github.com/lightningnetwork/lnd/kvdb v1.4.16
-	github.com/lightningnetwork/lnd/sqldb v1.0.9
+	github.com/lightningnetwork/lnd/sqldb v1.0.10
 	github.com/lightningnetwork/lnd/sqldb/v2 v2.0.0-00010101000000-000000000000
-	github.com/lightningnetwork/lnd/tlv v1.3.1
+	github.com/lightningnetwork/lnd/tlv v1.3.2
 	github.com/lightningnetwork/lnd/tor v1.1.6
 	github.com/mwitkow/go-conntrack v0.0.0-20190716064945-2f068394615f
 	github.com/mwitkow/grpc-proxy v0.0.0-20230212185441-f345521cb9c9
@@ -74,7 +74,7 @@ require (
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/btcsuite/btcd/btcutil/psbt v1.1.10 // indirect
 	github.com/btcsuite/btclog v0.0.0-20241003133417-09c4e92e319c // indirect
-	github.com/btcsuite/btcwallet v0.16.13 // indirect
+	github.com/btcsuite/btcwallet v0.16.14 // indirect
 	github.com/btcsuite/btcwallet/wallet/txauthor v1.3.5 // indirect
 	github.com/btcsuite/btcwallet/wallet/txrules v1.2.2 // indirect
 	github.com/btcsuite/btcwallet/wallet/txsizes v1.2.5 // indirect
@@ -146,7 +146,7 @@ require (
 	github.com/lightninglabs/lightning-node-connect/hashmailrpc v1.0.2 // indirect
 	github.com/lightninglabs/neutrino v0.16.1 // indirect
 	github.com/lightninglabs/neutrino/cache v1.1.2 // indirect
-	github.com/lightningnetwork/lightning-onion v1.2.1-0.20240712235311-98bd56499dfb // indirect
+	github.com/lightningnetwork/lightning-onion v1.2.1-0.20240815225420-8b40adf04ab9 // indirect
 	github.com/lightningnetwork/lnd/healthcheck v1.2.6 // indirect
 	github.com/lightningnetwork/lnd/queue v1.1.1 // indirect
 	github.com/lightningnetwork/lnd/ticker v1.1.1 // indirect
