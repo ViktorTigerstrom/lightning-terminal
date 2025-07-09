@@ -149,7 +149,7 @@ go-build-noui:
 
 go-install:
 	@$(call print, "Installing lightning-terminal.")
-	$(GOINSTALL) -trimpath -tags="$(LND_RELEASE_TAGS)" -ldflags "$(LDFLAGS)" $(PKG)/cmd/litd
+	$(GOINSTALL) -trimpath -tags="$(LND_RELEASE_TAGS) dev" -ldflags "$(LDFLAGS)" $(PKG)/cmd/litd
 	$(GOINSTALL) -trimpath -tags="$(LND_RELEASE_TAGS)" -ldflags "$(LDFLAGS)" $(PKG)/cmd/litcli
 
 go-install-noui:
