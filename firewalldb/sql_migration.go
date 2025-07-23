@@ -497,271 +497,137 @@ func verifyBktKeys(bkt *bbolt.Bucket, errorOnKeyValues bool,
 	})
 }
 
+// migratePrivacyMapperDBToSQL migrates the privacy mapper store from the
+// KV database to the SQL database. The migration iterates over each individual
+// privacy pair and inserts and validates each pair at the time, instead of
+// collecting all pairs and then inserting them in bulk. This is done to
+// minimize the memory usage during the migration, as the privacy mapper store
+// can contain a large number of pairs.
 func migratePrivacyMapperDBToSQL(ctx context.Context, kvStore *bbolt.DB,
 	sqlTx SQLQueries) error {
 
 	log.Infof("Starting migration of the privacy mapper store to SQL")
 
-	// 1) Collect all privacy pairs from the KV store.
-	privPairs, err := collectPrivacyPairs(ctx, kvStore, sqlTx)
-	if err != nil {
-		return fmt.Errorf("error migrating privacy mapper store: %w",
-			err)
-	}
-
-	// 2) Insert all collected privacy pairs into the SQL database.
-	err = insertPrivacyPairs(ctx, sqlTx, privPairs)
-	if err != nil {
-		return fmt.Errorf("insertion of privacy pairs failed: %w", err)
-	}
-
-	// 3) Validate that all inserted privacy pairs match the original values
-	// in the KV store. Note that this is done after all values have been
-	// inserted, to ensure that the migration doesn't overwrite any values
-	// after they were inserted.
-	err = validatePrivacyPairsMigration(ctx, sqlTx, privPairs)
-	if err != nil {
-		return fmt.Errorf("migration validation of privacy pairs "+
-			"failed: %w", err)
-	}
-
-	log.Infof("Migration of the privacy mapper stores to SQL completed. "+
-		"Total number of rows migrated: %d", len(privPairs))
-	return nil
-}
-
-// collectPrivacyPairs collects all privacy pairs from the KV store.
-func collectPrivacyPairs(ctx context.Context, kvStore *bbolt.DB,
-	sqlTx SQLQueries) (privacyPairs, error) {
-
-	groupPairs := make(privacyPairs)
-
-	return groupPairs, kvStore.View(func(kvTx *bbolt.Tx) error {
+	return kvStore.View(func(kvTx *bbolt.Tx) error {
 		bkt := kvTx.Bucket(privacyBucketKey)
 		if bkt == nil {
-			// If we haven't generated any privacy bucket yet,
-			// we can skip the migration, as there are no privacy
-			// pairs to migrate.
+			log.Infof("No privacy mapper bucket found; skipping")
 			return nil
 		}
 
-		return bkt.ForEach(func(groupId, v []byte) error {
+		return bkt.ForEach(func(groupAlias, v []byte) error {
 			if v != nil {
-				return fmt.Errorf("expected only buckets "+
-					"under %s bkt, but found value %s",
-					privacyBucketKey, v)
+				return fmt.Errorf("expected bucket under %s,"+
+					"found value", privacyBucketKey)
 			}
 
-			gBkt := bkt.Bucket(groupId)
-			if gBkt == nil {
-				return fmt.Errorf("group bkt for group id "+
-					"%s not found", groupId)
-			}
-
-			groupSqlId, err := sqlTx.GetSessionIDByAlias(
-				ctx, groupId,
+			sessionGroupID, err := sqlTx.GetSessionIDByAlias(
+				ctx, groupAlias,
 			)
 			if errors.Is(err, sql.ErrNoRows) {
-				return fmt.Errorf("session with group id %x "+
-					"not found in sql db", groupId)
+				return fmt.Errorf("session group %x not in "+
+					"SQL DB", groupAlias)
 			} else if err != nil {
 				return err
 			}
 
-			groupRealToPseudoPairs, err := collectGroupPairs(gBkt)
-			if err != nil {
-				return fmt.Errorf("processing group bkt "+
-					"for group id %s (sqlID %d) failed: %w",
-					groupId, groupSqlId, err)
+			grpBkt := bkt.Bucket(groupAlias)
+			if grpBkt == nil {
+				return fmt.Errorf("group bucket %x missing "+
+					"under %s", groupAlias,
+					privacyBucketKey)
 			}
 
-			groupPairs[groupSqlId] = groupRealToPseudoPairs
+			realBkt := grpBkt.Bucket(realToPseudoKey)
+			if realBkt == nil {
+				return fmt.Errorf("missing real->pseudo bucket "+
+					"for group %x", groupAlias)
+			}
 
-			return nil
+			pseudoBkt := grpBkt.Bucket(pseudoToRealKey)
+			if pseudoBkt == nil {
+				return fmt.Errorf("missing pseudo->real bucket "+
+					"for group %x", groupAlias)
+			}
+
+			if realBkt.Stats().KeyN != pseudoBkt.Stats().KeyN {
+				return errors.New("privacy mapper pairs mismatch")
+			}
+
+			if realBkt.Stats().BucketN > 1 {
+				return fmt.Errorf("unexpected nested buckets "+
+					"in real->pseudo bucket for group %x",
+					groupAlias)
+			}
+
+			if pseudoBkt.Stats().BucketN > 1 {
+				return fmt.Errorf("unexpected nested buckets "+
+					"in pseudo->real bucket for group %x",
+					groupAlias)
+			}
+
+			return migrateAndValidatePairBucket(ctx, sqlTx,
+				realBkt, sessionGroupID)
 		})
 	})
 }
 
-// collectGroupPairs collects all privacy pairs for a specific session group,
-// i.e. the group buckets under the privacy mapper bucket in the KV store.
-// The function returns them as a map, where the key is the real value, and
-// the value for the key is the pseudo values.
-// It also checks that the pairs are consistent, i.e. that for each real value
-// there is a corresponding pseudo value, and vice versa. If the pairs are
-// inconsistent, it returns an error indicating the mismatch.
-func collectGroupPairs(bkt *bbolt.Bucket) (map[string]string, error) {
-	var (
-		realToPseudoRes map[string]string
-		pseudoToRealRes map[string]string
-		err             error
-		missMatchErr    = errors.New("privacy mapper pairs mismatch")
-	)
+// migrateAndValidatePairBucket migrates all pairs in the given real bucket into
+// the SQL database, and validates that the pairs are correctly migrated.
+func migrateAndValidatePairBucket(ctx context.Context, sqlTx SQLQueries,
+	realBkt *bbolt.Bucket, sessionGroupID int64) error {
 
-	if realBkt := bkt.Bucket(realToPseudoKey); realBkt != nil {
-		realToPseudoRes, err = collectPairs(realBkt)
-		if err != nil {
-			return nil, fmt.Errorf("fetching real to pseudo pairs "+
-				"failed: %w", err)
-		}
-	} else {
-		return nil, fmt.Errorf("%s bucket not found", realToPseudoKey)
-	}
+	return realBkt.ForEach(func(real, pseudo []byte) error {
+		realVal := string(real)
+		pseudoVal := string(pseudo)
 
-	if pseudoBkt := bkt.Bucket(pseudoToRealKey); pseudoBkt != nil {
-		pseudoToRealRes, err = collectPairs(pseudoBkt)
-		if err != nil {
-			return nil, fmt.Errorf("fetching pseudo to real pairs "+
-				"failed: %w", err)
-		}
-	} else {
-		return nil, fmt.Errorf("%s bucket not found", pseudoToRealKey)
-	}
-
-	if len(realToPseudoRes) != len(pseudoToRealRes) {
-		return nil, missMatchErr
-	}
-
-	for realVal, pseudoVal := range realToPseudoRes {
-		if rv, ok := pseudoToRealRes[pseudoVal]; !ok || rv != realVal {
-			return nil, missMatchErr
-		}
-	}
-
-	return realToPseudoRes, nil
-}
-
-// collectPairs collects all privacy pairs from a specific realToPseudoKey or
-// pseudoToRealKey bucket in the KV store. It returns a map where the key is
-// the real value or pseudo value, and the value is the corresponding pseudo
-// value or real value, respectively (depending on if the realToPseudo or
-// pseudoToReal bucket is passed to the function).
-func collectPairs(pairsBucket *bbolt.Bucket) (map[string]string, error) {
-	pairsRes := make(map[string]string)
-
-	return pairsRes, pairsBucket.ForEach(func(k, v []byte) error {
-		if v == nil {
-			return fmt.Errorf("expected only key-values under "+
-				"pairs bucket, but found bucket %s", k)
-		}
-
-		if len(v) == 0 {
-			return fmt.Errorf("empty value stored for privacy "+
-				"pairs key %s", k)
-		}
-
-		pairsRes[string(k)] = string(v)
-
-		return nil
-	})
-}
-
-// insertPrivacyPairs inserts the collected privacy pairs into the SQL database.
-func insertPrivacyPairs(ctx context.Context, sqlTx SQLQueries,
-	pairs privacyPairs) error {
-
-	for groupId, groupPairs := range pairs {
-		err := insertGroupPairs(ctx, sqlTx, groupPairs, groupId)
-		if err != nil {
-			return fmt.Errorf("inserting group pairs for group "+
-				"id %d failed: %w", groupId, err)
-		}
-	}
-
-	return nil
-}
-
-// insertGroupPairs inserts the privacy pairs for a specific group into
-// the SQL database. It checks for duplicates before inserting, and returns
-// an error if a duplicate pair is found. The function takes a map of real
-// to pseudo values, where the key is the real value and the value is the
-// corresponding pseudo value.
-func insertGroupPairs(ctx context.Context, sqlTx SQLQueries,
-	pairs map[string]string, groupID int64) error {
-
-	for realVal, pseudoVal := range pairs {
-		err := sqlTx.InsertPrivacyPair(
-			ctx, sqlc.InsertPrivacyPairParams{
-				GroupID:   groupID,
+		// Insert the privacy pair into the SQL database.
+		if err := sqlTx.InsertPrivacyPair(
+			ctx,
+			sqlc.InsertPrivacyPairParams{
+				GroupID:   sessionGroupID,
 				RealVal:   realVal,
 				PseudoVal: pseudoVal,
 			},
-		)
-		if err != nil {
-			return fmt.Errorf("inserting privacy pair %s:%s "+
-				"failed: %w", realVal, pseudoVal, err)
+		); err != nil {
+			return fmt.Errorf("insert privacy pair %s->%s failed: "+
+				"%w", realVal, pseudoVal, err)
 		}
-	}
 
-	return nil
-}
-
-// validatePrivacyPairsMigration validates that the migrated privacy pairs
-// match the original values in the KV store.
-func validatePrivacyPairsMigration(ctx context.Context, sqlTx SQLQueries,
-	pairs privacyPairs) error {
-
-	for groupId, groupPairs := range pairs {
-		err := validateGroupPairsMigration(
-			ctx, sqlTx, groupPairs, groupId,
-		)
-		if err != nil {
-			return fmt.Errorf("migration validation of privacy "+
-				"pairs for group %d failed: %w", groupId, err)
-		}
-	}
-
-	return nil
-}
-
-// validateGroupPairsMigration validates that the migrated privacy pairs for
-// a specific group match the original values in the KV store. It checks that
-// for each real value, the pseudo value in the SQL database matches the
-// original pseudo value, and vice versa. If any mismatch is found, it returns
-// an error indicating the mismatch.
-func validateGroupPairsMigration(ctx context.Context, sqlTx SQLQueries,
-	pairs map[string]string, groupID int64) error {
-
-	for realVal, pseudoVal := range pairs {
-		resPseudoVal, err := sqlTx.GetPseudoForReal(
-			ctx, sqlc.GetPseudoForRealParams{
-				GroupID: groupID,
+		// Then validate that we can fetch the migrated pair correctly
+		// in the SQL database.
+		dbPseudo, err := sqlTx.GetPseudoForReal(
+			ctx,
+			sqlc.GetPseudoForRealParams{
+				GroupID: sessionGroupID,
 				RealVal: realVal,
 			},
 		)
-		if errors.Is(err, sql.ErrNoRows) {
-			return fmt.Errorf("migrated privacy pair %s:%s not "+
-				"found for real value", realVal, pseudoVal)
-		}
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to lookup migrated real "+
+				"value %s in the db: %w", realVal, err)
+		}
+		if dbPseudo != pseudoVal {
+			return fmt.Errorf("mismatch pseudo for %s: got %s, "+
+				"expected %s", realVal, dbPseudo, pseudoVal)
 		}
 
-		if resPseudoVal != pseudoVal {
-			return fmt.Errorf("pseudo value in db %s, does not "+
-				"match original value %s, for real value %s",
-				resPseudoVal, pseudoVal, realVal)
-		}
-
-		resRealVal, err := sqlTx.GetRealForPseudo(
-			ctx, sqlc.GetRealForPseudoParams{
-				GroupID:   groupID,
+		dbReal, err := sqlTx.GetRealForPseudo(
+			ctx,
+			sqlc.GetRealForPseudoParams{
+				GroupID:   sessionGroupID,
 				PseudoVal: pseudoVal,
 			},
 		)
-		if errors.Is(err, sql.ErrNoRows) {
-			return fmt.Errorf("migrated privacy pair %s:%s not "+
-				"found for pseudo value", realVal, pseudoVal)
-		}
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to lookup migrated pseudo "+
+				"value %s in the db: %w", pseudoVal, err)
+		}
+		if dbReal != realVal {
+			return fmt.Errorf("mismatch real for %s: got %s, "+
+				"expected %s", pseudoVal, dbReal, realVal)
 		}
 
-		if resRealVal != realVal {
-			return fmt.Errorf("real value in db %s, does not "+
-				"match original value %s, for pseudo value %s",
-				resRealVal, realVal, pseudoVal)
-		}
-	}
-
-	return nil
+		return nil
+	})
 }
