@@ -3,7 +3,9 @@ package accounts
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	"github.com/btcsuite/btcd/btcutil"
@@ -16,8 +18,17 @@ import (
 	"gopkg.in/macaroon.v2"
 )
 
+var (
+	// ErrServerNotActive indicates that the server has started but hasn't
+	// fully finished the startup process.
+	ErrServerNotActive = errors.New("accounts server is still in the " +
+		"process of starting")
+)
+
 // RPCServer is the main server that implements the Accounts gRPC service.
 type RPCServer struct {
+	active atomic.Bool
+
 	litrpc.UnimplementedAccountsServer
 
 	service *InterceptorService
@@ -26,13 +37,29 @@ type RPCServer struct {
 }
 
 // NewRPCServer returns a new RPC server for the given service.
-func NewRPCServer(service *InterceptorService,
-	superMacBaker litmac.Baker) *RPCServer {
+func NewRPCServer() *RPCServer {
+	return &RPCServer{}
+}
 
-	return &RPCServer{
-		service:       service,
-		superMacBaker: superMacBaker,
+// started returns true if the server has been started, and false otherwise.
+// NOTE: This function is safe for concurrent access.
+func (s *RPCServer) started() bool {
+	return s.active.Load()
+}
+
+// Start adds the necessary dependencies for the RPCServer to be able to process
+// requests, and starts the RPCServer.
+func (s *RPCServer) Start(service *InterceptorService,
+	superMacBaker litmac.Baker) error {
+
+	if s.active.Swap(true) {
+		return errors.New("accounts rpc server is already started")
 	}
+
+	s.service = service
+	s.superMacBaker = superMacBaker
+
+	return nil
 }
 
 // CreateAccount adds an entry to the account database. This entry represents
@@ -49,6 +76,10 @@ func NewRPCServer(service *InterceptorService,
 func (s *RPCServer) CreateAccount(ctx context.Context,
 	req *litrpc.CreateAccountRequest) (*litrpc.CreateAccountResponse,
 	error) {
+
+	if !s.started() {
+		return nil, ErrServerNotActive
+	}
 
 	log.Infof("[createaccount] label=%v, balance=%d, expiration=%d",
 		req.Label, req.AccountBalance, req.ExpirationDate)
@@ -110,6 +141,10 @@ func (s *RPCServer) CreateAccount(ctx context.Context,
 func (s *RPCServer) UpdateAccount(ctx context.Context,
 	req *litrpc.UpdateAccountRequest) (*litrpc.Account, error) {
 
+	if !s.started() {
+		return nil, ErrServerNotActive
+	}
+
 	log.Infof("[updateaccount] id=%s, label=%v, balance=%d, expiration=%d",
 		req.Id, req.Label, req.AccountBalance, req.ExpirationDate)
 
@@ -135,6 +170,10 @@ func (s *RPCServer) UpdateAccount(ctx context.Context,
 func (s *RPCServer) CreditAccount(ctx context.Context,
 	req *litrpc.CreditAccountRequest) (*litrpc.CreditAccountResponse,
 	error) {
+
+	if !s.started() {
+		return nil, ErrServerNotActive
+	}
 
 	if req.GetAccount() == nil {
 		return nil, fmt.Errorf("account param must be specified")
@@ -174,6 +213,10 @@ func (s *RPCServer) CreditAccount(ctx context.Context,
 func (s *RPCServer) DebitAccount(ctx context.Context,
 	req *litrpc.DebitAccountRequest) (*litrpc.DebitAccountResponse, error) {
 
+	if !s.started() {
+		return nil, ErrServerNotActive
+	}
+
 	if req.GetAccount() == nil {
 		return nil, fmt.Errorf("account param must be specified")
 	}
@@ -212,6 +255,10 @@ func (s *RPCServer) DebitAccount(ctx context.Context,
 func (s *RPCServer) ListAccounts(ctx context.Context,
 	_ *litrpc.ListAccountsRequest) (*litrpc.ListAccountsResponse, error) {
 
+	if !s.started() {
+		return nil, ErrServerNotActive
+	}
+
 	log.Info("[listaccounts]")
 
 	// Retrieve all accounts from the macaroon account store.
@@ -237,6 +284,10 @@ func (s *RPCServer) ListAccounts(ctx context.Context,
 func (s *RPCServer) AccountInfo(ctx context.Context,
 	req *litrpc.AccountInfoRequest) (*litrpc.Account, error) {
 
+	if !s.started() {
+		return nil, ErrServerNotActive
+	}
+
 	log.Infof("[accountinfo] id=%v, label=%v", req.Id, req.Label)
 
 	accountID, err := s.findAccount(ctx, req.Id, req.Label)
@@ -256,6 +307,10 @@ func (s *RPCServer) AccountInfo(ctx context.Context,
 func (s *RPCServer) RemoveAccount(ctx context.Context,
 	req *litrpc.RemoveAccountRequest) (*litrpc.RemoveAccountResponse,
 	error) {
+
+	if !s.started() {
+		return nil, ErrServerNotActive
+	}
 
 	log.Infof("[removeaccount] id=%v, label=%v", req.Id, req.Label)
 
