@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -40,8 +41,17 @@ import (
 // other special cases.
 const readOnlyAction = "***readonly***"
 
+var (
+	// ErrServerNotActive indicates that the server has started but hasn't
+	// fully finished the startup process.
+	ErrServerNotActive = errors.New("session server is still in the " +
+		"process of starting")
+)
+
 // sessionRpcServer is the gRPC server for the Session RPC interface.
 type sessionRpcServer struct {
+	active atomic.Bool
+
 	litrpc.UnimplementedSessionsServer
 	litrpc.UnimplementedFirewallServer
 	litrpc.UnimplementedAutopilotServer
@@ -70,41 +80,10 @@ type sessionRpcServerConfig struct {
 	privMap                 firewalldb.PrivacyMapper
 }
 
-// newSessionRPCServer creates a new sessionRpcServer using the passed config.
-func newSessionRPCServer(cfg *sessionRpcServerConfig) (*sessionRpcServer,
-	error) {
-
-	// Create the gRPC server that handles adding/removing sessions and the
-	// actual mailbox server that spins up the Terminal Connect server
-	// interface.
-	server := session.NewServer(
-		func(id session.ID, opts ...grpc.ServerOption) *grpc.Server {
-			// Add the session ID injector interceptors first so
-			// that the session ID is available in the context of
-			// all interceptors that come after.
-			allOpts := []grpc.ServerOption{
-				addSessionIDToStreamCtx(id),
-				addSessionIDToUnaryCtx(id),
-			}
-
-			allOpts = append(allOpts, cfg.grpcOptions...)
-			allOpts = append(allOpts, opts...)
-
-			// Construct the gRPC server with the options.
-			grpcServer := grpc.NewServer(allOpts...)
-
-			// Register various grpc servers with the LNC session
-			// server.
-			cfg.registerGrpcServers(grpcServer)
-
-			return grpcServer
-		},
-	)
-
+// newSessionRPCServer creates a new sessionRpcServer.
+func newSessionRPCServer() (*sessionRpcServer, error) {
 	return &sessionRpcServer{
-		cfg:           cfg,
-		sessionServer: server,
-		quit:          make(chan struct{}),
+		quit: make(chan struct{}),
 	}, nil
 }
 
@@ -164,9 +143,52 @@ func addSessionIDToUnaryCtx(id session.ID) grpc.ServerOption {
 	})
 }
 
-// start all the components necessary for the sessionRpcServer to start serving
-// requests. This includes resuming all non-revoked sessions.
-func (s *sessionRpcServer) start(ctx context.Context) error {
+// started returns true if the server has been started, and false otherwise.
+// NOTE: This function is safe for concurrent access.
+func (s *sessionRpcServer) started() bool {
+	return s.active.Load()
+}
+
+// start starts a new sessionRpcServer using the passed config, and adds all
+// components necessary for the sessionRpcServer to start serving requests. This
+// includes resuming all non-revoked sessions.
+func (s *sessionRpcServer) start(ctx context.Context,
+	cfg *sessionRpcServerConfig) error {
+
+	if s.active.Swap(true) {
+		return errors.New("session rpc server is already started")
+	}
+
+	// Create the gRPC server that handles adding/removing sessions and the
+	// actual mailbox server that spins up the Terminal Connect server
+	// interface.
+	server := session.NewServer(
+		func(id session.ID, opts ...grpc.ServerOption) *grpc.Server {
+			// Add the session ID injector interceptors first so
+			// that the session ID is available in the context of
+			// all interceptors that come after.
+			allOpts := []grpc.ServerOption{
+				addSessionIDToStreamCtx(id),
+				addSessionIDToUnaryCtx(id),
+			}
+
+			allOpts = append(allOpts, cfg.grpcOptions...)
+			allOpts = append(allOpts, opts...)
+
+			// Construct the gRPC server with the options.
+			grpcServer := grpc.NewServer(allOpts...)
+
+			// Register various grpc servers with the LNC session
+			// server.
+			cfg.registerGrpcServers(grpcServer)
+
+			return grpcServer
+		},
+	)
+
+	s.cfg = cfg
+	s.sessionServer = server
+
 	// Delete all sessions in the Reserved state.
 	err := s.cfg.db.DeleteReservedSessions(ctx)
 	if err != nil {
@@ -255,7 +277,9 @@ func (s *sessionRpcServer) start(ctx context.Context) error {
 func (s *sessionRpcServer) stop() error {
 	var returnErr error
 	s.stopOnce.Do(func() {
-		s.sessionServer.Stop()
+		if s.sessionServer != nil {
+			s.sessionServer.Stop()
+		}
 
 		close(s.quit)
 		s.wg.Wait()
@@ -267,6 +291,10 @@ func (s *sessionRpcServer) stop() error {
 // AddSession adds and starts a new Terminal Connect session.
 func (s *sessionRpcServer) AddSession(ctx context.Context,
 	req *litrpc.AddSessionRequest) (*litrpc.AddSessionResponse, error) {
+
+	if !s.started() {
+		return nil, ErrServerNotActive
+	}
 
 	expiry := time.Unix(int64(req.ExpiryTimestampSeconds), 0)
 	if time.Now().After(expiry) {
@@ -618,6 +646,10 @@ func (s *sessionRpcServer) resumeSession(ctx context.Context,
 func (s *sessionRpcServer) ListSessions(ctx context.Context,
 	_ *litrpc.ListSessionsRequest) (*litrpc.ListSessionsResponse, error) {
 
+	if !s.started() {
+		return nil, ErrServerNotActive
+	}
+
 	sessions, err := s.cfg.db.ListAllSessions(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("error fetching sessions: %v", err)
@@ -641,6 +673,10 @@ func (s *sessionRpcServer) ListSessions(ctx context.Context,
 // active.
 func (s *sessionRpcServer) RevokeSession(ctx context.Context,
 	req *litrpc.RevokeSessionRequest) (*litrpc.RevokeSessionResponse, error) {
+
+	if !s.started() {
+		return nil, ErrServerNotActive
+	}
 
 	pubKey, err := btcec.ParsePubKey(req.LocalPublicKey)
 	if err != nil {
@@ -675,6 +711,10 @@ func (s *sessionRpcServer) RevokeSession(ctx context.Context,
 func (s *sessionRpcServer) PrivacyMapConversion(ctx context.Context,
 	req *litrpc.PrivacyMapConversionRequest) (
 	*litrpc.PrivacyMapConversionResponse, error) {
+
+	if !s.started() {
+		return nil, ErrServerNotActive
+	}
 
 	var (
 		groupID session.ID
@@ -732,6 +772,10 @@ func (s *sessionRpcServer) PrivacyMapConversion(ctx context.Context,
 // request data for all actions.
 func (s *sessionRpcServer) ListActions(ctx context.Context,
 	req *litrpc.ListActionsRequest) (*litrpc.ListActionsResponse, error) {
+
+	if !s.started() {
+		return nil, ErrServerNotActive
+	}
 
 	// If no maximum number of actions is given, use a default of 100.
 	if req.MaxNumActions == 0 {
@@ -841,6 +885,10 @@ func (s *sessionRpcServer) ListAutopilotFeatures(ctx context.Context,
 	_ *litrpc.ListAutopilotFeaturesRequest) (
 	*litrpc.ListAutopilotFeaturesResponse, error) {
 
+	if !s.started() {
+		return nil, ErrServerNotActive
+	}
+
 	fs, err := s.cfg.autopilot.ListFeatures(ctx)
 	if err != nil {
 		return nil, err
@@ -883,6 +931,10 @@ func (s *sessionRpcServer) ListAutopilotFeatures(ctx context.Context,
 func (s *sessionRpcServer) AddAutopilotSession(ctx context.Context,
 	req *litrpc.AddAutopilotSessionRequest) (
 	*litrpc.AddAutopilotSessionResponse, error) {
+
+	if !s.started() {
+		return nil, ErrServerNotActive
+	}
 
 	if len(req.Features) == 0 {
 		return nil, fmt.Errorf("must include at least one feature")
@@ -1325,6 +1377,10 @@ func (s *sessionRpcServer) ListAutopilotSessions(ctx context.Context,
 	_ *litrpc.ListAutopilotSessionsRequest) (
 	*litrpc.ListAutopilotSessionsResponse, error) {
 
+	if !s.started() {
+		return nil, ErrServerNotActive
+	}
+
 	sessions, err := s.cfg.db.ListSessionsByType(ctx, session.TypeAutopilot)
 	if err != nil {
 		return nil, fmt.Errorf("error fetching sessions: %v", err)
@@ -1348,6 +1404,10 @@ func (s *sessionRpcServer) ListAutopilotSessions(ctx context.Context,
 func (s *sessionRpcServer) RevokeAutopilotSession(ctx context.Context,
 	req *litrpc.RevokeAutopilotSessionRequest) (
 	*litrpc.RevokeAutopilotSessionResponse, error) {
+
+	if !s.started() {
+		return nil, ErrServerNotActive
+	}
 
 	pubKey, err := btcec.ParsePubKey(req.LocalPublicKey)
 	if err != nil {
